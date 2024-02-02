@@ -9,71 +9,68 @@ module vga_test
 		output hsync, vsync,
 		output logic[11:0] rgb
 	);
-  
 	// video status output from vga_sync to tell when to route out rgb signal to DAC
 	logic[11:0]  rgb_local;
 	logic[9:0] x,y;
 	// instantiate vga_sync
 	vga_sync vga_sync_unit (.clk(clk), .reset(reset), .hsync(hsync), .vsync(vsync),.video_on(video_on), .p_tick(ptick), .x(x), .y(y));
   
-  logic [9:0] ball_hpos, ball_vpos;	// ball current position
+  logic [9:0] ball_x, ball_y, ball_x_next, ball_y_next;	// ball current position
   
-  logic [9:0] ball_horiz_move = -2;	// ball current X velocity
-  logic [9:0] ball_vert_move = 2;		// ball current Y velocity
+  logic [9:0] ball_x_move = -2;	// ball current X velocity
+  logic [9:0] ball_y_move = 2;		// ball current Y velocity
   
   localparam ball_horiz_initial = 128;	// ball initial X position
   localparam ball_vert_initial = 128;	// ball initial Y position
   localparam BALL_SIZE = 4;		// ball size (in pixels)
   
+  logic vsync_p;
   // update horizontal timer
-  always @(posedge vsync or posedge reset)
-  begin
-    if (reset) begin
-      // reset ball position to center
-      ball_vpos <= ball_vert_initial;
-      ball_hpos <= ball_horiz_initial;
-    end else begin
-      // add velocity vector to ball position
-      ball_hpos <= ball_hpos + ball_horiz_move;
-      ball_vpos <= ball_vpos + ball_vert_move;
-    end
+  always_ff @(posedge vsync or posedge reset) begin
+      ball_y <= reset ? ball_vert_initial : ball_y_next;
+      ball_x <= reset ? ball_horiz_initial: ball_x_next;
   end
   
-  logic ball_vert_collide, ball_horiz_collide, ball_vert_collide_p, ball_horiz_collide_p;
+  assign ball_x_next =ball_x + ball_x_move;
+  assign ball_y_next =ball_y + ball_y_move;
+  
+  
+  logic ball_y_collide, ball_x_collide, ball_y_collide_p, ball_x_collide_p;
   // these are set when the ball touches a border
-  assign ball_vert_collide = ball_vpos >= 480 - BALL_SIZE;
-  assign ball_horiz_collide =  ball_hpos >= 640 - BALL_SIZE;
+  assign ball_y_collide = ball_y >= 480 - BALL_SIZE;
+  assign ball_x_collide =  ball_x >= 640 - BALL_SIZE;
 
   // vertical bounce
-  always @(posedge clk)
+  always_ff @(posedge clk)
   begin
-    if(ball_vert_collide && ball_vert_collide != ball_vert_collide_p) begin 
-      ball_vert_move <= -ball_vert_move;
-      ball_vert_collide_p <= ball_vert_collide;
+    if(ball_y_collide && ball_y_collide != ball_y_collide_p) begin 
+      ball_y_move <= -ball_y_move;
+      ball_y_collide_p <= ball_y_collide;
       end
-     else if ( ball_vert_collide != ball_vert_collide_p ) 
-       ball_vert_collide_p <= ball_vert_collide;
+     else if ( ball_y_collide != ball_y_collide_p ) 
+       ball_y_collide_p <= ball_y_collide;
   end
   
   always_ff @(posedge clk)
   begin
-    if(ball_horiz_collide && ball_horiz_collide != ball_horiz_collide_p) begin 
-      ball_horiz_move <= -ball_horiz_move;
-      ball_horiz_collide_p <= ball_horiz_collide;
-      end
-     else if ( ball_horiz_collide != ball_horiz_collide_p ) 
-       ball_horiz_collide_p <= ball_horiz_collide;
+    if(ball_x_collide && ball_x_collide != ball_x_collide_p) begin 
+      ball_x_move <= -ball_x_move;
+      ball_x_collide_p <= ball_x_collide;
+    end
+    else if ( ball_x_collide != ball_x_collide_p ) 
+      ball_x_collide_p <= ball_x_collide;
   end
   
   
-  logic[9:0] ball_hdiff, ball_vdiff;
+  logic[9:0] ball_xdiff, ball_ydiff;
   // offset of ball position from video beam
-  assign ball_hdiff = x - ball_hpos;
-  assign ball_vdiff = y - ball_vpos;
+  assign ball_xdiff = x - ball_x;
+  assign ball_ydiff = y - ball_y;
+  
   logic ball_hgfx,ball_vgfx,ball_gfx,grid_gfx;
   // ball graphics output
-  assign ball_hgfx = ball_hdiff < BALL_SIZE;
-  assign ball_vgfx = ball_vdiff < BALL_SIZE;
+  assign ball_hgfx = ball_xdiff < BALL_SIZE;
+  assign ball_vgfx = ball_ydiff < BALL_SIZE;
   assign ball_gfx = ball_hgfx && ball_vgfx;
   // collide with vertical and horizontal boundaries
   logic[3:0] r,g,b;
