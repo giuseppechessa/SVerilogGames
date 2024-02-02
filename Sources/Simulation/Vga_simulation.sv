@@ -5,8 +5,10 @@ module Vga_simulation();
   logic[11:0] sw,rgb;
   vga_test Test(clk,reset, sw, hsync, vsync, rgb);
   initial begin
-    reset=0;
+    reset=1;
     clk=0;
+    #10;
+    reset=0;
   end
   assign #5 clk = ~clk;
   assign sw = 12'b0;

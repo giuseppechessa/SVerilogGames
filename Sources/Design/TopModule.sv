@@ -9,46 +9,79 @@ module vga_test
 		output hsync, vsync,
 		output logic[11:0] rgb
 	);
-	
-	// video status output from vga_sync to tell when to route out rgb signal to DAC
-	logic video_on,ptick;
-	logic[11:0]  rgb_local,x,y;
   
+	// video status output from vga_sync to tell when to route out rgb signal to DAC
+	logic[11:0]  rgb_local;
+	logic[9:0] x,y;
 	// instantiate vga_sync
 	vga_sync vga_sync_unit (.clk(clk), .reset(reset), .hsync(hsync), .vsync(vsync),.video_on(video_on), .p_tick(ptick), .x(x), .y(y));
-   
-   
-  //1024-800=224-> 224 il più vicino numero multiplo di 16-> 224>>4 = 14      
-  localparam ball_horiz_prefix = 6'd14;
-  //1024-525=499 .> 496 il più vicino multiplo di 16 -> 496>>4 = 31
-  localparam ball_vert_prefix = 6'd31;
-  logic[9:0] Xcounter,Xcounter_next,Ycounter,Ycounter_next; 
-  logic [3:0] XMove,YMove;
-  always_ff @(posedge hsync, posedge reset)   begin
-    Ycounter <= (reset || &Ycounter) ? {ball_vert_prefix,YMove} : Ycounter_next;
+  
+  logic [9:0] ball_hpos, ball_vpos;	// ball current position
+  
+  logic [9:0] ball_horiz_move = -2;	// ball current X velocity
+  logic [9:0] ball_vert_move = 2;		// ball current Y velocity
+  
+  localparam ball_horiz_initial = 128;	// ball initial X position
+  localparam ball_vert_initial = 128;	// ball initial Y position
+  localparam BALL_SIZE = 4;		// ball size (in pixels)
+  
+  // update horizontal timer
+  always @(posedge vsync or posedge reset)
+  begin
+    if (reset) begin
+      // reset ball position to center
+      ball_vpos <= ball_vert_initial;
+      ball_hpos <= ball_horiz_initial;
+    end else begin
+      // add velocity vector to ball position
+      ball_hpos <= ball_hpos + ball_horiz_move;
+      ball_vpos <= ball_vpos + ball_vert_move;
+    end
   end
-  always_ff @(posedge ptick, posedge reset)   begin
-    Xcounter <= (reset || &Xcounter) ? (&Ycounter ? {ball_horiz_prefix,XMove} :{ball_horiz_prefix,4'd0}) : Xcounter_next;
+  
+  logic ball_vert_collide, ball_horiz_collide, ball_vert_collide_p, ball_horiz_collide_p;
+  // these are set when the ball touches a border
+  assign ball_vert_collide = ball_vpos >= 480 - BALL_SIZE;
+  assign ball_horiz_collide =  ball_hpos >= 640 - BALL_SIZE;
+
+  // vertical bounce
+  always @(posedge clk)
+  begin
+    if(ball_vert_collide && ball_vert_collide != ball_vert_collide_p) begin 
+      ball_vert_move <= -ball_vert_move;
+      ball_vert_collide_p <= ball_vert_collide;
+      end
+     else if ( ball_vert_collide != ball_vert_collide_p ) 
+       ball_vert_collide_p <= ball_vert_collide;
   end
-  assign Xcounter_next = Xcounter+1;
-  assign Ycounter_next = Ycounter+1;
-  assign XMove = 4'd2;
-  assign YMove = 4'd2;
-   
-	// rgb buffer
-	always_ff @(posedge clk, posedge reset)
-		if (reset)
-			rgb <= 0;
-		else
-			rgb <= rgb_local;
-			
-  logic ball_hgfx = Xcounter >= 1020;	// 1024-1020 = 4 pixel ball
-  logic ball_vgfx = Ycounter >= 1020;
-  logic ball_gfx = ball_hgfx && ball_vgfx;
-	// output
-	logic[3:0] r = {4{video_on && (ball_hgfx | ball_gfx)}};
-  logic[3:0] g = {4{video_on && ball_gfx}};
-  logic[3:0] b = {4{video_on && (ball_vgfx | ball_gfx)}};
-  assign rgb_local = {b,g,r};
+  
+  always_ff @(posedge clk)
+  begin
+    if(ball_horiz_collide && ball_horiz_collide != ball_horiz_collide_p) begin 
+      ball_horiz_move <= -ball_horiz_move;
+      ball_horiz_collide_p <= ball_horiz_collide;
+      end
+     else if ( ball_horiz_collide != ball_horiz_collide_p ) 
+       ball_horiz_collide_p <= ball_horiz_collide;
+  end
+  
+  
+  logic[9:0] ball_hdiff, ball_vdiff;
+  // offset of ball position from video beam
+  assign ball_hdiff = x - ball_hpos;
+  assign ball_vdiff = y - ball_vpos;
+  logic ball_hgfx,ball_vgfx,ball_gfx,grid_gfx;
+  // ball graphics output
+  assign ball_hgfx = ball_hdiff < BALL_SIZE;
+  assign ball_vgfx = ball_vdiff < BALL_SIZE;
+  assign ball_gfx = ball_hgfx && ball_vgfx;
+  // collide with vertical and horizontal boundaries
+  logic[3:0] r,g,b;
+  // combine signals to RGB output
+  assign grid_gfx = (((x&7)==0) && ((y&7)==0));
+  assign r = {4{video_on && (ball_hgfx | ball_gfx)}};
+  assign g = {4{video_on && (grid_gfx | ball_gfx)}};
+  assign b = {4{video_on && (ball_vgfx | ball_gfx)}};
+  assign rgb = {b,g,r};
 
 endmodule
